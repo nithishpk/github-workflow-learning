@@ -1,0 +1,12 @@
+name: react code deployemnt 
+on: [push,workflow_dispatch] 
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - name: pull code 
+              run: |
+                  echo "cloning git repo"
+                  echo "git hub action reserve keyword ${{ toJson(github) }}  }}"
+                  git clone https://github.com/${{ github.repository }}.git 
+                  echo "done cloning"
