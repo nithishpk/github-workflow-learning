@@ -74,11 +74,44 @@ jobs:
     deploy:
         needs: build
         runs-on: ubuntu-latest
+        permissions:
+            pages: write      # to deploy to Pages
+            id-token: write
+         # Deploy to the github-pages environment
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
         steps:
             - name: donwload artifact
               uses: actions/download-artifact@v4
               with:
                 name: build-artifact 
+            - name: deploy to github pages
+              id: deployment
+              # This action deploys the contents of the dist directory to GitHub Pages
+              # It requires the repository to be configured for GitHub Pages
+              # and the Pages source to be set to "Deploy from a branch" with the branch set to `gh-pages` or `main` and the folder set to `/ (root)` or `/dist`
+              # If you want to deploy from a different branch or folder, you can specify it in the `with` section
+              # For example, if you want to deploy from the `gh-pages` branch and the `dist` folder, you can use:
+              # uses: actions/deploy-pages@v4
+              # with:
+              #   branch: gh-pages
+              #   folder: dist
+              # If you want to deploy to a custom domain, you can specify it in the `with` section
+              # For example, if you want to deploy to `example.com`, you can use:
+              # uses: actions/deploy-pages@v4
+              # with:
+              #   custom-domain: example.com
+              # If you want to deploy to a specific GitHub Pages environment, you can specify it
+              # in the `with` section
+              # For example, if you want to deploy to the `production` environment, you can use:
+              # uses: actions/deploy-pages@v4
+              # with:           
+              uses: actions/deploy-pages@v4
+              with: 
+                token: ${{ secrets.GITHUB_TOKEN }}  # This token is automatically provided by GitHub Actions
+          
+              
             
                 
         #old way to checkout code
