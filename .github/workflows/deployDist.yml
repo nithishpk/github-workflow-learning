@@ -4,9 +4,34 @@ jobs:
     test:
         runs-on: ubuntu-latest
         steps:
-            - name: pull code 
+            - name: Checkout code
+              uses: actions/checkout@v4
+            - name: Install Node.js
+              uses: actions/setup-node@v4
+              with:
+                node-version: '20'  # Specify the Node.js version you want to use
+            - name: check installed version 
               run: |
-                  echo "cloning git repo"
-                  echo "git hub action reserve keyword ${{ toJson(github) }}  }}"
-                  git clone https://github.com/${{ github.repository }}.git 
-                  echo "done cloning"
+                    echo "checking node version"
+                    node --version
+                    echo "checking npm version"
+                    npm --version
+            
+            - name: Install dependencies
+              run: |
+                  echo "installing dependencies"
+                  npm ci
+                  echo "done installing dependencies"
+            - name: run tests
+              run: |
+                  echo "running tests"
+                  npm run test
+                  echo "done running tests"
+        #old way to checkout code
+        # steps:
+            # - name: pull code 
+            #   run: |
+            #       echo "cloning git repo"
+            #       echo "git hub action reserve keyword ${{ toJson(github) }}  }}"
+            #       git clone https://github.com/${{ github.repository }}.git 
+            #       echo "done cloning"
