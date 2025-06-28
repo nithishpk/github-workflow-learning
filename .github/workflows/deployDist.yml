@@ -4,8 +4,8 @@ on:
  push:
     branches:
         - main  # Trigger on pushes to the main branch
-    path-ignore:
-        - .github/workflows/*  # Ignore changes to this workflow file
+    paths-ignore:
+        # - .github/workflows/*  # Ignore changes to this workflow file
  workflow_dispatch:  # Allow manual triggering of the workflow  
 jobs:
     test:
@@ -39,9 +39,9 @@ jobs:
                   echo "running tests"
                   npm run test
                   echo "done running tests"
-    deploy:
-        needs: test
+    build:
         runs-on: ubuntu-latest
+        needs: test
         steps:
             - name: get code
               uses: actions/checkout@v4
@@ -52,18 +52,31 @@ jobs:
             - name: cache dependencies
               uses: actions/cache@v4
               with:
-                path: ~/.npm
-                key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+                 path: ~/.npm
+                 key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
             - name: install dependecnices
               run: |
                   echo "installing dependencies"
                   npm ci
                   echo "installed dependencies"
+            - name: upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                name: build-artifact
             - name: build code 
               run: |
                   echo "building code"
                   npm run build
-                  echo "done building code"
+                  echo "done building code"     
+    deploy:
+        needs: build
+        runs-on: ubuntu-latest
+        steps:
+            - name: donwload artifact
+              uses: actions/download-artifact@v4
+              with:
+                name: build-artifact 
+            
                 
         #old way to checkout code
         # steps:
