@@ -1,5 +1,12 @@
 name: react code deployemnt 
-on: [push,workflow_dispatch] 
+# on: [push,workflow_dispatch] 
+on: 
+ push:
+    branches:
+        - main  # Trigger on pushes to the main branch
+    path-ignore:
+        - .github/workflows/*  # Ignore changes to this workflow file
+ workflow_dispatch:  # Allow manual triggering of the workflow  
 jobs:
     test:
         runs-on: ubuntu-latest
