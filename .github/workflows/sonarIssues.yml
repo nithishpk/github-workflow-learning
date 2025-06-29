@@ -15,6 +15,12 @@ jobs:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
+      - name: discard secrets
+        run: |
+          echo "printing discard secrets"
+          echo "SonarQube scan started for PR #${{ github.event.pull_request.number }}"
+             echo "SonarQube scan started for PR #${{ github.event.pull_request.number }}"
+          echo "discord secrete: ${{ secrets.DISCORD_WEBHOOK }}"
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       - name: Notify Discord (Failure)
@@ -22,6 +28,7 @@ jobs:
         uses: Ilshidur/action-discord@master
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          username: "${{ github.actor }}"
           message: "❌ SonarQube scan failed for PR #${{ github.event.pull_request.number }}. Please check the merge request for errors: ${{ github.event.pull_request.html_url }}"
       - name: Notify Discord (Success)
         if: success()
