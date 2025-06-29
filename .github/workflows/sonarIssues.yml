@@ -4,7 +4,8 @@ on:
     branches:
       - main
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
+
 jobs:
   sonarqube:
     name: SonarQube
@@ -13,44 +14,115 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarcloud-github-action@master
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }} 
-      - name: discard secrets
-        run: |
-          echo "printing discard secrets"
-          echo "SonarQube scan started for PR #${{ github.event.pull_request.number }}"
-             echo "SonarQube scan started for PR #${{ github.event.pull_request.number }}"
-          echo "discord secrete: ${{ secrets.DISCORD_WEBHOOK }}"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed for PR decoration
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=nithishpk_github-workflow-learning
+            -Dsonar.organization=nithishpk
+
+      - name: SonarQube Quality Gate Check
+        id: sonarqube-quality-gate
+        uses: SonarSource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      - name: Notify Discord (Failure)
-        if: failure()
+        # DO NOT use continue-on-error here - let it fail the step
+
+      # This will ONLY run if SonarQube quality gate FAILED
+      - name: Notify Discord (SonarQube Failed)
+        if: failure() && steps.sonarqube-quality-gate.conclusion == 'failure'
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          status: ${{ job.status }}
-          content: "Hey ${{ github.actor }}"
-          title: "deploy"
-          description: "❌ SonarQube scan failed for PR #${{ github.event.pull_request.number }}. Please check the merge request for errors: ${{ github.event.pull_request.html_url }}"
-          image: ${{ secrets.EMBED_IMAGE }}
-          color: 0x0000ff
-          url: "https://github.com/sarisia/actions-status-discord"
-          username: GitHub Actions
-        #   avatar_url: ${{ secrets.AVATAR_URL }}
-       
-      - name: Notify Discord (Success)
-        if: success()
-        uses:  sarisia/actions-status-discord@v1
+          status: "failure"
+          content: "Hey ${{ github.actor }} 🚨"
+          title: "SonarQube Quality Gate Failed"
+          description: |
+            ❌ **Code Quality Issues Detected!**
+            
+            **Project**: `${{ github.repository }}`
+            **Branch**: `${{ github.ref_name }}`
+            **Commit**: `${{ github.sha }}`
+            
+            🔍 **Issues Found**: Code quality standards not met
+            📊 **Detailed Information**: [SonarCloud Analysis](${{ github.event.pull_request && format('https://sonarcloud.io/dashboard?id=nithishpk_github-workflow-learning&pullRequest={0}', github.event.pull_request.number) || format('https://sonarcloud.io/dashboard?id=nithishpk_github-workflow-learning&branch={0}', github.ref_name) }})
+            🔧 **Action Required**: Fix code quality issues before deployment
+            
+            **Links**:
+            ${{ github.event.pull_request.html_url && format('• **PR**: {0}', github.event.pull_request.html_url) || format('• **Workflow**: {0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
+            • **SonarCloud Project**: [View Overview](https://sonarcloud.io/project/overview?id=nithishpk_github-workflow-learning)
+          color: 0xff4444  # Red for SonarQube failure
+          url: "${{ github.event.pull_request && format('https://sonarcloud.io/dashboard?id=nithishpk_github-workflow-learning&pullRequest={0}', github.event.pull_request.number) || format('https://sonarcloud.io/dashboard?id=nithishpk_github-workflow-learning&branch={0}', github.ref_name) }}"
+          username: "Code Quality Bot 🔍"
+
+      # These steps will ONLY run if SonarQube quality gate PASSED
+      - name: Setup SSH Key
+        if: success() && steps.sonarqube-quality-gate.conclusion == 'success'
+        uses: shimataro/ssh-key-action@v2
         with:
-            webhook: ${{ secrets.DISCORD_WEBHOOK }}
-            status: ${{ job.status }}
-            content: "Hey ${{ github.actor }}"
-            title: "deploy"
-            description: "✅ SonarQube scan passed for PR #${{ github.event.pull_request.number }}. See details: ${{ github.event.pull_request.html_url }}"
-            image: ${{ secrets.EMBED_IMAGE }}
-            color: 0x0000ff
-            url: "https://github.com/sarisia/actions-status-discord"
-            username: GitHub Actions
-       
+          key: ${{ secrets.THINKIFY_PEM_KEY }}
+          known_hosts: 35.154.159.94
+
+      - name: Deploy to Lightsail
+        if: success() && steps.sonarqube-quality-gate.conclusion == 'success'
+        id: deployment
+        run: |
+          ssh -o StrictHostKeyChecking=no ubuntu@35.154.159.94 << 'EOF'
+            cd /home/thinkif-schoolerp/htdocs/schoolerp.thinkif.in/
+            sudo bash -c 'echo "Deployment successful at $(date)" > deployment.log'
+            echo "Deployment completed successfully"
+          EOF
+
+      # This will ONLY run if SonarQube passed BUT deployment failed
+      - name: Notify Discord (Deployment Failed)
+        if: failure() && steps.sonarqube-quality-gate.conclusion == 'success' && steps.deployment.conclusion == 'failure'
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          status: "failure"
+          content: "Hey ${{ github.actor }} 🚨"
+          title: "Deployment Failed"
+          description: |
+            ❌ **Deployment Error!**
+            
+            **Project**: `${{ github.repository }}`
+            **Branch**: `${{ github.ref_name }}`
+            **Status**: SonarQube ✅ | Deployment ❌
+            
+            🔧 **Issue**: Server deployment failed
+            📋 **Check**: Server connectivity, permissions, or deployment script
+            
+            ${{ github.event.pull_request.html_url && format('**PR Link**: {0}', github.event.pull_request.html_url) || format('**Workflow**: {0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
+          color: 0xff8800  # Orange for deployment failure
+          url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          username: "Deployment Bot 🚀"
+
+      # This will ONLY run if BOTH SonarQube and deployment succeed
+      - name: Notify Discord (Success)
+        if: success() && steps.sonarqube-quality-gate.conclusion == 'success' && steps.deployment.conclusion == 'success'
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          status: "success"
+          content: "Hey ${{ github.actor }} 🎉"
+          title: "Deployment Successful"
+          description: |
+            ✅ **All Systems Go!**
+            
+            **Project**: `${{ github.repository }}`
+            **Branch**: `${{ github.ref_name }}`
+            **Status**: SonarQube ✅ | Deployment ✅
+            
+            🔍 **Quality**: Code passed all quality checks
+            🚀 **Deployed**: Server updated successfully
+            📊 **SonarCloud**: [View Report](https://sonarcloud.io/project/overview?id=nithishpk_github-workflow-learning)
+            
+            ${{ github.event.pull_request.html_url && format('**PR Link**: {0}', github.event.pull_request.html_url) || format('**Workflow**: {0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
+          color: 0x00ff88  # Green for success
+          url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          username: "Code Monkey Bot 🐒"
