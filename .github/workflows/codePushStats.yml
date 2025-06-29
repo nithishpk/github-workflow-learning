@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - develop
+      - found
       - staging
       # Add more branches as needed
 
@@ -81,7 +81,7 @@ jobs:
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
           status: "success"
-          content: "Hey ${{ github.actor }}! ${{ steps.context.outputs.emoji }}"
+          content: "Hey @nithish2765 ${{ github.actor }}! ${{ steps.context.outputs.emoji }}"
           title: "Code Push Alert 🚨"
           description: |
             ${{ steps.context.outputs.context }}
