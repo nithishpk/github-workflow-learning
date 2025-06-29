@@ -59,7 +59,8 @@ jobs:
                   echo "installing dependencies"
                   npm ci
                   echo "installed dependencies"
-        
+            - name: Clean dist directory
+              run: rm -rf dist
             - name: build code 
               run: |
                   echo "building code"
