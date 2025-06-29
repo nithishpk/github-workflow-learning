@@ -110,4 +110,4 @@ jobs:
           color: ${{ steps.context.outputs.color }}
           url: "${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
           username: "Code Monkey Bot 🐒"
-          avatar_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+          avatar_url: "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExejlqaWQxbDE3MW1xN2IwaXNmaTB3Y2t1Zm52aDU1dDN4MHNoNzRndCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/26n6RDp0nAmOMKCU8/giphy.gif"
