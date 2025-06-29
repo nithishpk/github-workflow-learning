@@ -20,16 +20,15 @@ jobs:
 
       - name: Check SonarQube Quality Gate
         run: |
-            STATUS=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
-              "https://sonarcloud.io/web_api/api/qualitygates/project_status?projectKey=nithishpk_github-workflow-learning" \
-              | jq -r .projectStatus.status)
-      
-            echo "SonarQube Quality Gate Status: $STATUS"
-      
-            if [ "$STATUS" != "OK" ]; then
-              echo "Quality gate failed!"
-              exit 1
-            fi
+          RESPONSE=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+            "https://sonarcloud.io/api/qualitygates/project_status?projectKey=nithishpk_github-workflow-learning")
+          echo "SonarQube API response: $RESPONSE"
+          STATUS=$(echo "$RESPONSE" | jq -r .projectStatus.status)
+          echo "SonarQube Quality Gate Status: $STATUS"
+          if [ "$STATUS" != "OK" ]; then
+            echo "Quality gate failed!"
+            exit 1
+          fi
       - name: discard secrets
         run: |
           echo "printing discard secrets"
@@ -50,7 +49,7 @@ jobs:
           image: ${{ secrets.EMBED_IMAGE }}
           color: 0x0000ff
           url: "https://github.com/sarisia/actions-status-discord"
-          username: GitHub Actions
+          username: "Code Monkey Bot 🐒"
         #   avatar_url: ${{ secrets.AVATAR_URL }}
        
       - name: Notify Discord (Success)
@@ -65,5 +64,4 @@ jobs:
             image: ${{ secrets.EMBED_IMAGE }}
             color: 0x0000ff
             url: "https://github.com/sarisia/actions-status-discord"
-            username: GitHub Actions
-       
+            username: Code Monkey Bot 🐒
