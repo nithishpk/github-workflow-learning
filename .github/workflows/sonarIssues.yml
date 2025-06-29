@@ -50,12 +50,14 @@ jobs:
             **Commit**: `${{ github.sha }}`
             
             🔍 **Issues Found**: Code quality standards not met
-            📊 **View Details**: [SonarCloud Dashboard](https://sonarcloud.io/project/overview?id=nithishpk_github-workflow-learning)
+            📊 **Detailed Information**: [SonarCloud Analysis](${{ github.event.pull_request && format('https://sonarcloud.io/dashboard?id=nithishpk_github-workflow-learning&pullRequest={0}', github.event.pull_request.number) || format('https://sonarcloud.io/dashboard?id=nithishpk_github-workflow-learning&branch={0}', github.ref_name) }})
             🔧 **Action Required**: Fix code quality issues before deployment
             
-            ${{ github.event.pull_request.html_url && format('**PR Link**: {0}', github.event.pull_request.html_url) || format('**Workflow**: {0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
+            **Links**:
+            ${{ github.event.pull_request.html_url && format('• **PR**: {0}', github.event.pull_request.html_url) || format('• **Workflow**: {0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
+            • **SonarCloud Project**: [View Overview](https://sonarcloud.io/project/overview?id=nithishpk_github-workflow-learning)
           color: 0xff4444  # Red for SonarQube failure
-          url: "https://sonarcloud.io/project/overview?id=nithishpk_github-workflow-learning"
+          url: "${{ github.event.pull_request && format('https://sonarcloud.io/dashboard?id=nithishpk_github-workflow-learning&pullRequest={0}', github.event.pull_request.number) || format('https://sonarcloud.io/dashboard?id=nithishpk_github-workflow-learning&branch={0}', github.ref_name) }}"
           username: "Code Quality Bot 🔍"
 
       # These steps will ONLY run if SonarQube quality gate PASSED
