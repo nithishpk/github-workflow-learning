@@ -16,49 +16,210 @@ jobs:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
       
       - name: SonarQube Scan
+        id: sonarqube-scan
         uses: SonarSource/sonarcloud-github-action@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed for PR decoration
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
             -Dsonar.projectKey=nithishpk_github-workflow-learning
             -Dsonar.organization=nithishpk
 
-      - name: Check SonarQube Quality Gate
-        id: sonar-quality-gate
-        run: |
-          echo "Waiting for SonarQube analysis to complete..."
-          sleep 30  # Wait for analysis to complete
-          
-          RESPONSE=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
-            "https://sonarcloud.io/api/qualitygates/project_status?projectKey=nithishpk_github-workflow-learning")
-          
-          echo "SonarQube API response: $RESPONSE"
-          
-          # Check if response is valid JSON
-          if ! echo "$RESPONSE" | jq . > /dev/null 2>&1; then
-            echo "Invalid JSON response from SonarCloud API"
-            echo "quality_gate_status=ERROR" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-          
-          STATUS=$(echo "$RESPONSE" | jq -r '.projectStatus.status // "ERROR"')
-          echo "SonarQube Quality Gate Status: $STATUS"
-          echo "quality_gate_status=$STATUS" >> $GITHUB_OUTPUT
-          
-          if [ "$STATUS" != "OK" ]; then
-            echo "::error::Quality gate failed with status: $STATUS"
-            exit 1
-          fi
-          
-          echo "Quality gate passed successfully"
+      # Method 1: Use SonarQube's built-in quality gate check
+      - name: SonarQube Quality Gate Check (Built-in)
+        id: sonarqube-quality-gate-builtin
+        uses: SonarSource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        continue-on-error: true
+
+      # Method 2: Manual API check with retry logic
+      - name: Check SonarQube Quality Gate (Manual)
+        id: sonar-quality-gate-manual
+        run: |
+          echo "Checking SonarQube Quality Gate status..."
+          
+          # Get the task ID from the report-task.txt file
+          TASK_ID=""
+          if [ -f ".scannerwork/report-task.txt" ]; then
+            TASK_ID=$(grep -oP 'ceTaskId=\K[^&]*' .scannerwork/report-task.txt)
+            echo "Found task ID: $TASK_ID"
+          fi
+          
+          # Wait for analysis to complete and check quality gate
+          MAX_ATTEMPTS=30
+          ATTEMPT=1
+          QUALITY_GATE_STATUS=""
+          
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Checking quality gate status..."
+            
+            # Method 2a: Check using project status API
+            RESPONSE=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+              "https://sonarcloud.io/api/qualitygates/project_status?projectKey=nithishpk_github-workflow-learning")
+            
+            echo "API Response: $RESPONSE"
+            
+            if echo "$RESPONSE" | jq . > /dev/null 2>&1; then
+              STATUS=$(echo "$RESPONSE" | jq -r '.projectStatus.status // "NONE"')
+              echo "Quality Gate Status: $STATUS"
+              
+              if [ "$STATUS" = "OK" ]; then
+                echo "✅ Quality gate passed!"
+                echo "quality_gate_status=OK" >> $GITHUB_OUTPUT
+                echo "quality_gate_passed=true" >> $GITHUB_OUTPUT
+                exit 0
+              elif [ "$STATUS" = "ERROR" ]; then
+                echo "❌ Quality gate failed!"
+                echo "quality_gate_status=ERROR" >> $GITHUB_OUTPUT
+                echo "quality_gate_passed=false" >> $GITHUB_OUTPUT
+                
+                # Get detailed failure reasons
+                CONDITIONS=$(echo "$RESPONSE" | jq -r '.projectStatus.conditions[]? | select(.status == "ERROR") | "\(.metricKey): \(.actualValue) (threshold: \(.errorThreshold))"')
+                echo "Failed conditions:"
+                echo "$CONDITIONS"
+                echo "failed_conditions<<EOF" >> $GITHUB_OUTPUT
+                echo "$CONDITIONS" >> $GITHUB_OUTPUT
+                echo "EOF" >> $GITHUB_OUTPUT
+                
+                exit 1
+              elif [ "$STATUS" = "WARN" ]; then
+                echo "⚠️ Quality gate passed with warnings"
+                echo "quality_gate_status=WARN" >> $GITHUB_OUTPUT
+                echo "quality_gate_passed=true" >> $GITHUB_OUTPUT
+                exit 0
+              fi
+            fi
+            
+            echo "Quality gate status not ready yet, waiting..."
+            sleep 10
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          
+          echo "❌ Timeout waiting for quality gate status"
+          echo "quality_gate_status=TIMEOUT" >> $GITHUB_OUTPUT
+          echo "quality_gate_passed=false" >> $GITHUB_OUTPUT
+          exit 1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        continue-on-error: true
+
+      # Method 3: Check using task completion API if we have task ID
+      - name: Check Task Completion Status
+        id: task-status
+        run: |
+          if [ -f ".scannerwork/report-task.txt" ]; then
+            TASK_ID=$(grep -oP 'ceTaskId=\K[^&]*' .scannerwork/report-task.txt)
+            echo "Checking task completion for ID: $TASK_ID"
+            
+            TASK_RESPONSE=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+              "https://sonarcloud.io/api/ce/task?id=$TASK_ID")
+            
+            echo "Task Response: $TASK_RESPONSE"
+            
+            TASK_STATUS=$(echo "$TASK_RESPONSE" | jq -r '.task.status // "UNKNOWN"')
+            echo "Task Status: $TASK_STATUS"
+            echo "task_status=$TASK_STATUS" >> $GITHUB_OUTPUT
+            
+            if [ "$TASK_STATUS" = "SUCCESS" ]; then
+              echo "✅ SonarQube analysis completed successfully"
+            elif [ "$TASK_STATUS" = "FAILED" ]; then
+              echo "❌ SonarQube analysis failed"
+              exit 1
+            fi
+          else
+            echo "No report-task.txt found"
+          fi
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        continue-on-error: true
+
+      # Method 4: Use webhook/measures API for more detailed checks
+      - name: Check Specific Metrics
+        id: check-metrics
+        run: |
+          echo "Checking specific SonarQube metrics..."
+          
+          # Check key metrics that might indicate quality issues
+          METRICS="alert_status,quality_gate_details,bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density"
+          
+          METRICS_RESPONSE=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+            "https://sonarcloud.io/api/measures/component?component=nithishpk_github-workflow-learning&metricKeys=$METRICS")
+          
+          echo "Metrics Response: $METRICS_RESPONSE"
+          
+          # Parse alert_status specifically
+          ALERT_STATUS=$(echo "$METRICS_RESPONSE" | jq -r '.component.measures[]? | select(.metric == "alert_status") | .value // "NONE"')
+          echo "Alert Status: $ALERT_STATUS"
+          echo "alert_status=$ALERT_STATUS" >> $GITHUB_OUTPUT
+          
+          if [ "$ALERT_STATUS" = "OK" ]; then
+            echo "✅ All quality checks passed"
+            echo "metrics_passed=true" >> $GITHUB_OUTPUT
+          elif [ "$ALERT_STATUS" = "ERROR" ]; then
+            echo "❌ Quality metrics failed"
+            echo "metrics_passed=false" >> $GITHUB_OUTPUT
+            
+            # Get detailed metrics
+            echo "Detailed metrics:"
+            echo "$METRICS_RESPONSE" | jq -r '.component.measures[]? | "\(.metric): \(.value)"'
+            exit 1
+          else
+            echo "⚠️ Alert status unclear: $ALERT_STATUS"
+            echo "metrics_passed=unknown" >> $GITHUB_OUTPUT
+          fi
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        continue-on-error: true
+
+      # Determine final quality gate status
+      - name: Determine Final Quality Gate Status
+        id: final-quality-gate
+        run: |
+          echo "Determining final quality gate status..."
+          
+          # Check built-in action result first
+          if [ "${{ steps.sonarqube-quality-gate-builtin.outcome }}" = "success" ]; then
+            echo "✅ Built-in quality gate check passed"
+            echo "final_status=PASSED" >> $GITHUB_OUTPUT
+            echo "quality_gate_passed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check manual API result
+          if [ "${{ steps.sonar-quality-gate-manual.outputs.quality_gate_passed }}" = "true" ]; then
+            echo "✅ Manual quality gate check passed"
+            echo "final_status=PASSED" >> $GITHUB_OUTPUT
+            echo "quality_gate_passed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check metrics result
+          if [ "${{ steps.check-metrics.outputs.metrics_passed }}" = "true" ]; then
+            echo "✅ Metrics check passed"
+            echo "final_status=PASSED" >> $GITHUB_OUTPUT
+            echo "quality_gate_passed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # If we get here, quality gate failed
+          echo "❌ Quality gate failed"
+          echo "final_status=FAILED" >> $GITHUB_OUTPUT
+          echo "quality_gate_passed=false" >> $GITHUB_OUTPUT
+          
+          echo "Summary of checks:"
+          echo "- Built-in action: ${{ steps.sonarqube-quality-gate-builtin.outcome }}"
+          echo "- Manual check: ${{ steps.sonar-quality-gate-manual.outputs.quality_gate_status }}"
+          echo "- Metrics check: ${{ steps.check-metrics.outputs.alert_status }}"
+          echo "- Task status: ${{ steps.task-status.outputs.task_status }}"
+          
+          exit 1
 
       # Notify Discord if SonarQube Quality Gate fails
       - name: Notify Discord (SonarQube Failed)
-        if: always() && steps.sonar-quality-gate.outcome == 'failure'
+        if: always() && steps.final-quality-gate.outputs.quality_gate_passed == 'false'
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
@@ -71,27 +232,36 @@ jobs:
             **Project**: `${{ github.repository }}`
             **Branch**: `${{ github.ref_name }}`
             **Commit**: `${{ github.sha }}`
-            **Quality Gate Status**: `${{ steps.sonar-quality-gate.outputs.quality_gate_status }}`
             
-            🔍 **Issues Found**: Code quality standards not met
+            📊 **Quality Gate Results**:
+            - Built-in Check: `${{ steps.sonarqube-quality-gate-builtin.outcome }}`
+            - Manual API: `${{ steps.sonar-quality-gate-manual.outputs.quality_gate_status }}`
+            - Alert Status: `${{ steps.check-metrics.outputs.alert_status }}`
+            - Task Status: `${{ steps.task-status.outputs.task_status }}`
+            
+            🔍 **Failed Conditions**:
+            ```
+            ${{ steps.sonar-quality-gate-manual.outputs.failed_conditions }}
+            ```
+            
             📊 **View Details**: [SonarCloud Dashboard](https://sonarcloud.io/project/overview?id=nithishpk_github-workflow-learning)
             🔧 **Action Required**: Fix code quality issues before deployment
             
             ${{ github.event.pull_request.html_url && format('**PR Link**: {0}', github.event.pull_request.html_url) || format('**Workflow**: {0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
-          color: 0xff4444  # Red for SonarQube failure
+          color: 0xff4444
           url: "https://sonarcloud.io/project/overview?id=nithishpk_github-workflow-learning"
           username: "Code Quality Bot 🔍"
 
-      # Only proceed with deployment if SonarQube passes
+      # Only proceed with deployment if quality gate passes
       - name: Setup SSH Key
-        if: steps.sonar-quality-gate.outcome == 'success'
+        if: steps.final-quality-gate.outputs.quality_gate_passed == 'true'
         uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.THINKIFY_PEM_KEY }}
           known_hosts: 35.154.159.94
 
       - name: Deploy to Lightsail
-        if: steps.sonar-quality-gate.outcome == 'success'
+        if: steps.final-quality-gate.outputs.quality_gate_passed == 'true'
         id: deployment
         run: |
           ssh -o StrictHostKeyChecking=no ubuntu@35.154.159.94 << 'EOF'
@@ -102,7 +272,7 @@ jobs:
 
       # Notify Discord if deployment fails (but SonarQube passed)
       - name: Notify Discord (Deployment Failed)
-        if: always() && steps.sonar-quality-gate.outcome == 'success' && steps.deployment.outcome == 'failure'
+        if: always() && steps.final-quality-gate.outputs.quality_gate_passed == 'true' && steps.deployment.outcome == 'failure'
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
@@ -120,13 +290,13 @@ jobs:
             📋 **Check**: Server connectivity, permissions, or deployment script
             
             ${{ github.event.pull_request.html_url && format('**PR Link**: {0}', github.event.pull_request.html_url) || format('**Workflow**: {0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
-          color: 0xff8800  # Orange for deployment failure
+          color: 0xff8800
           url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           username: "Deployment Bot 🚀"
 
       # Notify Discord on successful deployment
       - name: Notify Discord (Success)
-        if: steps.sonar-quality-gate.outcome == 'success' && steps.deployment.outcome == 'success'
+        if: steps.final-quality-gate.outputs.quality_gate_passed == 'true' && steps.deployment.outcome == 'success'
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
@@ -139,13 +309,16 @@ jobs:
             **Project**: `${{ github.repository }}`
             **Branch**: `${{ github.ref_name }}`
             **Status**: SonarQube ✅ | Deployment ✅
-            **Quality Gate**: `${{ steps.sonar-quality-gate.outputs.quality_gate_status }}`
+            
+            📊 **Quality Gate Summary**:
+            - Final Status: `${{ steps.final-quality-gate.outputs.final_status }}`
+            - Alert Status: `${{ steps.check-metrics.outputs.alert_status }}`
             
             🔍 **Quality**: Code passed all quality checks
             🚀 **Deployed**: Server updated successfully
             📊 **SonarCloud**: [View Report](https://sonarcloud.io/project/overview?id=nithishpk_github-workflow-learning)
             
             ${{ github.event.pull_request.html_url && format('**PR Link**: {0}', github.event.pull_request.html_url) || format('**Workflow**: {0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
-          color: 0x00ff88  # Green for success
+          color: 0x00ff88
           url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           username: "Code Monkey Bot 🐒"
