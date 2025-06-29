@@ -34,44 +34,37 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+      # Method 1: Using SSH Action (Recommended)
       - name: Setup SSH Key
-        run: |
-          # Create SSH directory
-          mkdir -p ~/.ssh
-          
-          # Decode and save SSH key
-          echo "${{ secrets.LIGHTSAIL_SSH_KEY_B64 }}" | base64 --decode > ~/.ssh/thinkify.pem
-          
-          # Debug: Check if key was decoded properly
-          echo "Key file size: $(wc -c < ~/.ssh/thinkify.pem)"
-          echo "First line of key:"
-          head -n 1 ~/.ssh/thinkify.pem
-          echo "Last line of key:"
-          tail -n 1 ~/.ssh/thinkify.pem
-          
-          # Ensure proper line endings (convert CRLF to LF if needed)
-          sed -i 's/\r$//' ~/.ssh/thinkify.pem
-          
-          # Set correct permissions
-          chmod 600 ~/.ssh/thinkify.pem
-          
-          # Verify key with ssh-keygen
-          echo "Validating SSH key format:"
-          ssh-keygen -l -f ~/.ssh/thinkify.pem || echo "Key validation failed - this might be the issue"
-          
-          # Add host to known_hosts to avoid host key verification
-          ssh-keyscan -H 35.154.159.94 >> ~/.ssh/known_hosts 2>/dev/null
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.THINKIFY_PEM_KEY }}
+          known_hosts: 35.154.159.94
 
-      - name: SSH and Deploy
+      - name: Deploy to Lightsail
         run: |
-          # Test SSH connection first
-          echo "Testing SSH connection..."
-          ssh -i ~/.ssh/thinkify.pem -o ConnectTimeout=10 -o BatchMode=yes ubuntu@35.154.159.94 'echo "SSH connection successful"'
-          
-          # If connection works, proceed with deployment
-          echo "Proceeding with deployment..."
-          ssh -i ~/.ssh/thinkify.pem ubuntu@35.154.159.94 \
-            'sudo bash -c "cd /home/thinkif-schoolerp/htdocs/schoolerp.thinkif.in/ && echo \"Deployment successful at $(date)\" > deployment.log"'
+          ssh -o StrictHostKeyChecking=no ubuntu@35.154.159.94 << 'EOF'
+            cd /home/thinkif-schoolerp/htdocs/schoolerp.thinkif.in/
+            sudo bash -c 'echo "Deployment successful at $(date)" > deployment.log'
+            echo "Deployment completed successfully"
+          EOF
+
+      # Alternative Method 2: Manual SSH Setup (if SSH action doesn't work)
+      # Uncomment this section and comment out the SSH action above if needed
+      # - name: Manual SSH Setup
+      #   run: |
+      #     mkdir -p ~/.ssh
+      #     echo "${{ secrets.LIGHTSAIL_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+      #     chmod 600 ~/.ssh/id_rsa
+      #     ssh-keyscan -H ${{ secrets.LIGHTSAIL_HOST }} >> ~/.ssh/known_hosts
+      #     
+      # - name: Deploy with Manual SSH
+      #   run: |
+      #     ssh ubuntu@${{ secrets.LIGHTSAIL_HOST }} << 'EOF'
+      #       cd /home/thinkif-schoolerp/htdocs/schoolerp.thinkif.in/
+      #       sudo bash -c 'echo "Deployment successful at $(date)" > deployment.log'
+      #       echo "Deployment completed successfully"
+      #     EOF
 
       - name: Notify Discord (Failure)
         if: failure()
@@ -81,7 +74,7 @@ jobs:
           status: ${{ job.status }}
           content: "Hey ${{ github.actor }}"
           title: "deploy"
-          description: "❌ Deployment failed for PR #${{ github.event.pull_request.number || 'N/A' }}. Please check the workflow for errors: ${{ github.event.pull_request.html_url || github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          description: "❌ Deployment failed for commit ${{ github.sha }}. Please check the workflow for errors: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           image: ${{ secrets.EMBED_IMAGE }}
           color: 0xff0000  # Red for failure
           url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -95,7 +88,7 @@ jobs:
           status: ${{ job.status }}
           content: "Hey ${{ github.actor }}"
           title: "deploy"
-          description: "✅ Deployment successful for PR #${{ github.event.pull_request.number || 'N/A' }}. See details: ${{ github.event.pull_request.html_url || github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          description: "✅ Deployment successful for commit ${{ github.sha }}. Server updated successfully!"
           image: ${{ secrets.EMBED_IMAGE }}
           color: 0x00ff00  # Green for success
           url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
