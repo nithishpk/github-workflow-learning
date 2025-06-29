@@ -17,3 +17,15 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: Notify Discord (Failure)
+        if: failure()
+        uses: Ilshidur/action-discord@master
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          message: "❌ SonarQube scan failed for PR #${{ github.event.pull_request.number }}. Please check the merge request for errors: ${{ github.event.pull_request.html_url }}"
+      - name: Notify Discord (Success)
+        if: success()
+        uses: Ilshidur/action-discord@master
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          message: "✅ SonarQube scan passed for PR #${{ github.event.pull_request.number }}. See details: ${{ github.event.pull_request.html_url }}"
