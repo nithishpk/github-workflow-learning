@@ -42,18 +42,34 @@ jobs:
           # Decode and save SSH key
           echo "${{ secrets.LIGHTSAIL_SSH_KEY_B64 }}" | base64 --decode > ~/.ssh/thinkify.pem
           
+          # Debug: Check if key was decoded properly
+          echo "Key file size: $(wc -c < ~/.ssh/thinkify.pem)"
+          echo "First line of key:"
+          head -n 1 ~/.ssh/thinkify.pem
+          echo "Last line of key:"
+          tail -n 1 ~/.ssh/thinkify.pem
+          
+          # Ensure proper line endings (convert CRLF to LF if needed)
+          sed -i 's/\r$//' ~/.ssh/thinkify.pem
+          
           # Set correct permissions
           chmod 600 ~/.ssh/thinkify.pem
           
-          # Add host to known_hosts to avoid host key verification
-          ssh-keyscan -H 35.154.159.94 >> ~/.ssh/known_hosts
+          # Verify key with ssh-keygen
+          echo "Validating SSH key format:"
+          ssh-keygen -l -f ~/.ssh/thinkify.pem || echo "Key validation failed - this might be the issue"
           
-          # Verify key format (optional debug step)
-          echo "SSH key first line:"
-          head -n 1 ~/.ssh/thinkify.pem
+          # Add host to known_hosts to avoid host key verification
+          ssh-keyscan -H 35.154.159.94 >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: SSH and Deploy
         run: |
+          # Test SSH connection first
+          echo "Testing SSH connection..."
+          ssh -i ~/.ssh/thinkify.pem -o ConnectTimeout=10 -o BatchMode=yes ubuntu@35.154.159.94 'echo "SSH connection successful"'
+          
+          # If connection works, proceed with deployment
+          echo "Proceeding with deployment..."
           ssh -i ~/.ssh/thinkify.pem ubuntu@35.154.159.94 \
             'sudo bash -c "cd /home/thinkif-schoolerp/htdocs/schoolerp.thinkif.in/ && echo \"Deployment successful at $(date)\" > deployment.log"'
 
