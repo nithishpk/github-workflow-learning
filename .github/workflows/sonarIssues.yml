@@ -5,6 +5,7 @@ on:
       - main
   pull_request:
     types: [opened, synchronize, reopened]
+
 jobs:
   sonarqube:
     name: SonarQube
@@ -13,10 +14,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }} 
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       - name: Check SonarQube Quality Gate
         run: |
@@ -31,18 +33,30 @@ jobs:
           fi
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      - name: Decode SSH Key
+
+      - name: Setup SSH Key
         run: |
-         echo "${{ secrets.LIGHTSAIL_SSH_KEY_B64 }}" | base64 --decode > thinkify.pem
-         chmod 600 thinkify.pem
-         head -n 2 thinkify.pem
+          # Create SSH directory
+          mkdir -p ~/.ssh
+          
+          # Decode and save SSH key
+          echo "${{ secrets.LIGHTSAIL_SSH_KEY_B64 }}" | base64 --decode > ~/.ssh/thinkify.pem
+          
+          # Set correct permissions
+          chmod 600 ~/.ssh/thinkify.pem
+          
+          # Add host to known_hosts to avoid host key verification
+          ssh-keyscan -H 35.154.159.94 >> ~/.ssh/known_hosts
+          
+          # Verify key format (optional debug step)
+          echo "SSH key first line:"
+          head -n 1 ~/.ssh/thinkify.pem
 
       - name: SSH and Deploy
         run: |
-          ssh -o StrictHostKeyChecking=no -i thinkify.pem ubuntu@35.154.159.94 << 'EOF'
-            sudo bash -c 'cd /home/thinkif-schoolerp/htdocs/schoolerp.thinkif.in/ && echo "should work" > newFile.txt'
-          EOF           
-              
+          ssh -i ~/.ssh/thinkify.pem ubuntu@35.154.159.94 \
+            'sudo bash -c "cd /home/thinkif-schoolerp/htdocs/schoolerp.thinkif.in/ && echo \"Deployment successful at $(date)\" > deployment.log"'
+
       - name: Notify Discord (Failure)
         if: failure()
         uses: sarisia/actions-status-discord@v1
@@ -51,23 +65,22 @@ jobs:
           status: ${{ job.status }}
           content: "Hey ${{ github.actor }}"
           title: "deploy"
-          description: "❌ SonarQube scan failed for PR #${{ github.event.pull_request.number }}. Please check the merge request for errors: ${{ github.event.pull_request.html_url }}"
+          description: "❌ Deployment failed for PR #${{ github.event.pull_request.number || 'N/A' }}. Please check the workflow for errors: ${{ github.event.pull_request.html_url || github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           image: ${{ secrets.EMBED_IMAGE }}
-          color: 0x0000ff
-          url: "https://github.com/sarisia/actions-status-discord"
+          color: 0xff0000  # Red for failure
+          url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           username: "Code Monkey Bot 🐒"
-        #   avatar_url: ${{ secrets.AVATAR_URL }}
-       
+
       - name: Notify Discord (Success)
         if: success()
-        uses:  sarisia/actions-status-discord@v1
+        uses: sarisia/actions-status-discord@v1
         with:
-            webhook: ${{ secrets.DISCORD_WEBHOOK }}
-            status: ${{ job.status }}
-            content: "Hey ${{ github.actor }}"
-            title: "deploy"
-            description: "✅ SonarQube scan passed for PR #${{ github.event.pull_request.number }}. See details: ${{ github.event.pull_request.html_url }}"
-            image: ${{ secrets.EMBED_IMAGE }}
-            color: 0x0000ff
-            url: "https://github.com/sarisia/actions-status-discord"
-            username: Code Monkey Bot 🐒
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          status: ${{ job.status }}
+          content: "Hey ${{ github.actor }}"
+          title: "deploy"
+          description: "✅ Deployment successful for PR #${{ github.event.pull_request.number || 'N/A' }}. See details: ${{ github.event.pull_request.html_url || github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          image: ${{ secrets.EMBED_IMAGE }}
+          color: 0x00ff00  # Green for success
+          url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          username: "Code Monkey Bot 🐒"
