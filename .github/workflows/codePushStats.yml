@@ -1,0 +1,113 @@
+name: Discord Push Notification
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - staging
+      # Add more branches as needed
+
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Fetch current and previous commit for diff
+
+      - name: Get commit statistics
+        id: stats
+        run: |
+          # Get the number of lines added and deleted
+          ADDED=$(git diff --numstat HEAD~1 HEAD | awk '{sum += $1} END {print sum}')
+          DELETED=$(git diff --numstat HEAD~1 HEAD | awk '{sum += $2} END {print sum}')
+          
+          # Handle empty values
+          ADDED=${ADDED:-0}
+          DELETED=${DELETED:-0}
+          
+          echo "added=$ADDED" >> $GITHUB_OUTPUT
+          echo "deleted=$DELETED" >> $GITHUB_OUTPUT
+          
+          # Get changed files count
+          FILES_CHANGED=$(git diff --name-only HEAD~1 HEAD | wc -l)
+          echo "files_changed=$FILES_CHANGED" >> $GITHUB_OUTPUT
+          
+          # Get commit message
+          COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+          echo "commit_msg=$COMMIT_MSG" >> $GITHUB_OUTPUT
+
+      - name: Generate fun context
+        id: context
+        run: |
+          ADDED=${{ steps.stats.outputs.added }}
+          
+          if [ $ADDED -gt 250 ]; then
+            CONTEXT="🚀 **WHOA THERE, CODE WARRIOR!** Someone's been busy! That's a lot of lines! 📝✨"
+            EMOJI="🔥💻"
+            COLOR="0xff6b35"  # Orange for lots of code
+          elif [ $ADDED -gt 100 ]; then
+            CONTEXT="💪 **Solid work!** A decent chunk of code added. Keep it up! 🎯"
+            EMOJI="⚡💪"
+            COLOR="0x00d4aa"  # Teal for moderate code
+          elif [ $ADDED -gt 50 ]; then
+            CONTEXT="👍 **Nice commit!** Some good progress made! 🌟"
+            EMOJI="✨👌"
+            COLOR="0x5865f2"  # Discord blue for normal
+          elif [ $ADDED -gt 0 ]; then
+            CONTEXT="🤏 **Small but mighty!** Every line counts! 💎"
+            EMOJI="🐣💫"
+            COLOR="0x57f287"  # Green for small changes
+          else
+            CONTEXT="🧹 **Cleanup crew!** Looks like some housekeeping was done! 🏠"
+            EMOJI="🗑️✨"
+            COLOR="0xfee75c"  # Yellow for deletions only
+          fi
+          
+          echo "context=$CONTEXT" >> $GITHUB_OUTPUT
+          echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+          echo "color=$COLOR" >> $GITHUB_OUTPUT
+      - name: Calculate Net Change
+        id: netchange
+        run: |
+            added=${{ steps.stats.outputs.added }}
+            deleted=${{ steps.stats.outputs.deleted }}
+            net=$((added - deleted))
+            echo "net=$net" >> "$GITHUB_OUTPUT"
+      - name: Notify Discord
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          status: "success"
+          content: "Hey ${{ github.actor }}! ${{ steps.context.outputs.emoji }}"
+          title: "Code Push Alert 🚨"
+          description: |
+            ${{ steps.context.outputs.context }}
+            
+            
+            **📊 Push Details:**
+            **Repository**: `${{ github.repository }}`
+            **Branch**: `${{ github.ref_name }}`
+            **Pusher**: @${{ github.actor }}
+            
+            **📈 Code Statistics:**
+            • **Lines Added**: `+${{ steps.stats.outputs.added }}` 🟢
+            • **Lines Deleted**: `-${{ steps.stats.outputs.deleted }}` 🔴
+            • **Files Changed**: `${{ steps.stats.outputs.files_changed }}` 📁
+            • **Net Change**: `${{ steps.netchange.outputs.net }}` lines
+            
+            **💬 Commit Message:**
+            > ${{ steps.stats.outputs.commit_msg }}
+            
+            **🔗 Links:**
+            • [View Commit](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
+            • [Repository](${{ github.server_url }}/${{ github.repository }})
+            
+            ---
+            *Powered by Code Monkey Bot* 🐒
+          color: ${{ steps.context.outputs.color }}
+          url: "${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+          username: "Code Monkey Bot 🐒"
+          avatar_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
