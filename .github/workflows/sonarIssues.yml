@@ -28,22 +28,37 @@ jobs:
       - name: Check SonarQube Quality Gate
         id: sonar-quality-gate
         run: |
+          echo "Waiting for SonarQube analysis to complete..."
+          sleep 30  # Wait for analysis to complete
+          
           RESPONSE=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
             "https://sonarcloud.io/api/qualitygates/project_status?projectKey=nithishpk_github-workflow-learning")
+          
           echo "SonarQube API response: $RESPONSE"
-          STATUS=$(echo "$RESPONSE" | jq -r .projectStatus.status)
-          echo "SonarQube Quality Gate Status: $STATUS"
-          echo "sonar_status=$STATUS" >> $GITHUB_OUTPUT
-          if [ "$STATUS" != "OK" ]; then
-            echo "Quality gate failed!"
+          
+          # Check if response is valid JSON
+          if ! echo "$RESPONSE" | jq . > /dev/null 2>&1; then
+            echo "Invalid JSON response from SonarCloud API"
+            echo "quality_gate_status=ERROR" >> $GITHUB_OUTPUT
             exit 1
           fi
+          
+          STATUS=$(echo "$RESPONSE" | jq -r '.projectStatus.status // "ERROR"')
+          echo "SonarQube Quality Gate Status: $STATUS"
+          echo "quality_gate_status=$STATUS" >> $GITHUB_OUTPUT
+          
+          if [ "$STATUS" != "OK" ]; then
+            echo "::error::Quality gate failed with status: $STATUS"
+            exit 1
+          fi
+          
+          echo "Quality gate passed successfully"
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       # Notify Discord if SonarQube Quality Gate fails
       - name: Notify Discord (SonarQube Failed)
-        if: failure() && steps.sonar-quality-gate.conclusion == 'failure'
+        if: always() && steps.sonar-quality-gate.outcome == 'failure'
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
@@ -56,6 +71,7 @@ jobs:
             **Project**: `${{ github.repository }}`
             **Branch**: `${{ github.ref_name }}`
             **Commit**: `${{ github.sha }}`
+            **Quality Gate Status**: `${{ steps.sonar-quality-gate.outputs.quality_gate_status }}`
             
             🔍 **Issues Found**: Code quality standards not met
             📊 **View Details**: [SonarCloud Dashboard](https://sonarcloud.io/project/overview?id=nithishpk_github-workflow-learning)
@@ -68,14 +84,15 @@ jobs:
 
       # Only proceed with deployment if SonarQube passes
       - name: Setup SSH Key
-        if: success()
+        if: steps.sonar-quality-gate.outcome == 'success'
         uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.THINKIFY_PEM_KEY }}
           known_hosts: 35.154.159.94
 
       - name: Deploy to Lightsail
-        if: success()
+        if: steps.sonar-quality-gate.outcome == 'success'
+        id: deployment
         run: |
           ssh -o StrictHostKeyChecking=no ubuntu@35.154.159.94 << 'EOF'
             cd /home/thinkif-schoolerp/htdocs/schoolerp.thinkif.in/
@@ -85,7 +102,7 @@ jobs:
 
       # Notify Discord if deployment fails (but SonarQube passed)
       - name: Notify Discord (Deployment Failed)
-        if: failure() && steps.sonar-quality-gate.conclusion == 'success'
+        if: always() && steps.sonar-quality-gate.outcome == 'success' && steps.deployment.outcome == 'failure'
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
@@ -109,7 +126,7 @@ jobs:
 
       # Notify Discord on successful deployment
       - name: Notify Discord (Success)
-        if: success()
+        if: steps.sonar-quality-gate.outcome == 'success' && steps.deployment.outcome == 'success'
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
@@ -122,6 +139,7 @@ jobs:
             **Project**: `${{ github.repository }}`
             **Branch**: `${{ github.ref_name }}`
             **Status**: SonarQube ✅ | Deployment ✅
+            **Quality Gate**: `${{ steps.sonar-quality-gate.outputs.quality_gate_status }}`
             
             🔍 **Quality**: Code passed all quality checks
             🚀 **Deployed**: Server updated successfully
