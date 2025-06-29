@@ -81,8 +81,8 @@ jobs:
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
           status: "success"
-          content: "Hey @nithish2765 ${{ github.actor }}! ${{ steps.context.outputs.emoji }}"
-          title: "Code Push Alert 🚨"
+          content: "Hey @nithish2765 🚨"
+          title: "Code Push Alert from ${{ github.actor }}${{ steps.context.outputs.emoji }}"
           description: |
             ${{ steps.context.outputs.context }}
             
