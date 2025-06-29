@@ -34,14 +34,14 @@ jobs:
       - name: Decode SSH Key
         run: |
          echo "${{ secrets.LIGHTSAIL_SSH_KEY_B64 }}" | base64 --decode > thinkify.pem
-         sudo chmod 600 thinkify.pem
+         chmod 600 thinkify.pem
+         head -n 2 thinkify.pem
 
       - name: SSH and Deploy
         run: |
-            ssh -i thinkify.pem ubuntu@35.154.159.94
-              sudo su
-              cd /home/thinkif-schoolerp/htdocs/schoolerp.thinkif.in/
-              echo "should work" > newFile.txt              
+          ssh -o StrictHostKeyChecking=no -i thinkify.pem ubuntu@35.154.159.94 << 'EOF'
+            sudo bash -c 'cd /home/thinkif-schoolerp/htdocs/schoolerp.thinkif.in/ && echo "should work" > newFile.txt'
+          EOF           
               
       - name: Notify Discord (Failure)
         if: failure()
