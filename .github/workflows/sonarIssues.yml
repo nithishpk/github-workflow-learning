@@ -25,14 +25,30 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       - name: Notify Discord (Failure)
         if: failure()
-        uses: Ilshidur/action-discord@master
+        uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          username: "${{ github.actor }}"
-          message: "❌ SonarQube scan failed for PR #${{ github.event.pull_request.number }}. Please check the merge request for errors: ${{ github.event.pull_request.html_url }}"
+          status: ${{ job.status }}
+          content: "Hey ${{ github.actor }}"
+          title: "deploy"
+          description: "❌ SonarQube scan failed for PR #${{ github.event.pull_request.number }}. Please check the merge request for errors: ${{ github.event.pull_request.html_url }}"
+          image: ${{ secrets.EMBED_IMAGE }}
+          color: 0x0000ff
+          url: "https://github.com/sarisia/actions-status-discord"
+          username: GitHub Actions
+        #   avatar_url: ${{ secrets.AVATAR_URL }}
+       
       - name: Notify Discord (Success)
         if: success()
-        uses: Ilshidur/action-discord@master
+        uses:  sarisia/actions-status-discord@v1
         with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          message: "✅ SonarQube scan passed for PR #${{ github.event.pull_request.number }}. See details: ${{ github.event.pull_request.html_url }}"
+            webhook: ${{ secrets.DISCORD_WEBHOOK }}
+            status: ${{ job.status }}
+            content: "Hey ${{ github.actor }}"
+            title: "deploy"
+            description: "✅ SonarQube scan passed for PR #${{ github.event.pull_request.number }}. See details: ${{ github.event.pull_request.html_url }}"
+            image: ${{ secrets.EMBED_IMAGE }}
+            color: 0x0000ff
+            url: "https://github.com/sarisia/actions-status-discord"
+            username: GitHub Actions
+       
