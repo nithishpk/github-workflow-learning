@@ -23,7 +23,7 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=nithishpk_github-workflow-learning
-            -Dsonar.organization=your-organization-key
+            -Dsonar.organization=nithishpk
 
       - name: Check SonarQube Quality Gate
         run: |
