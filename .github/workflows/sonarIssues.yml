@@ -29,14 +29,20 @@ jobs:
             echo "Quality gate failed!"
             exit 1
           fi
-      - name: discard secrets
-        run: |
-          echo "printing discard secrets"
-          echo "SonarQube scan started for PR #${{ github.event.pull_request.number }}"
-             echo "SonarQube scan started for PR #${{ github.event.pull_request.number }}"
-          echo "discord secrete: ${{ secrets.DISCORD_WEBHOOK }}"
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: Decode SSH Key
+        run: |
+          echo "${{ secrets.LIGHTSAIL_SSH_KEY_B64 }}" | base64 --decode > lightsail_key.pem
+          chmod 600 lightsail_key.pem
+
+      - name: SSH and Deploy
+        run: |
+            ssh -o StrictHostKeyChecking=no -i lightsail_key.pem ubuntu@35.154.159.94 << 'EOF'
+              sudo su
+              cd /home/thinkif-schoolerp/htdocs/schoolerp.thinkif.in/
+              echo "should work" > newFile.txt              
+            EOF    
       - name: Notify Discord (Failure)
         if: failure()
         uses: sarisia/actions-status-discord@v1
